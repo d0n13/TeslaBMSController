@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Arduino.h>
 #include "comms.hpp"
 
@@ -37,7 +39,9 @@ class BMSModule {
         float cellVolt[6];          // calculated as 16 bit value * 6.250 / 16383 = volts
         float lowestCellVolt[6];
         float highestCellVolt[6];
+        uint8_t balanceState[6]; 
         float moduleVolt;          // calculated as 16 bit value * 33.333 / 16383 = volts
+        float packVolt;  
         float temperatures[2];     // Don't know the proper scaling at this point
         float lowestTemperature;
         float highestTemperature;
@@ -52,16 +56,28 @@ class BMSModule {
         int sensor;
         uint8_t moduleAddress;     //1 to 0x3E
 
+        bool readModuleValues();
+
     public:
 
-        BMSModule(uint8_t address);
+        BMSModule(  );
         ~BMSModule();
         void readStatus();
-        bool readModuleValues();
+        bool readModule();
+
+        uint8_t getFaults();
+        uint8_t getAlerts();
+        uint8_t getCOVCells();
+        uint8_t getCUVCells();
 
         void setExists(bool ex);
         void setAddress(int newAddr);
 
         float getLowTemp();
         float getHighTemp();
+
+        float getCellVoltage(int cell);
+        float getTemperature(int temp);
+
+        float getPackVoltage();
 };

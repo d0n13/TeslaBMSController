@@ -1,9 +1,23 @@
 #include "bms.hpp"
 #include "display.hpp"
 
-BMSModule::BMSModule(uint8_t address) {
+BMSModule::BMSModule() {
 
-    moduleAddress = address;
+    for (int i = 0; i < 6; i++)
+    {
+        cellVolt[i] = 0.0f;
+        lowestCellVolt[i] = 5.0f;
+        highestCellVolt[i] = 0.0f;
+        balanceState[i] = 0;
+    }
+    moduleVolt = 0.0f;
+    temperatures[0] = 0.0f;
+    temperatures[1] = 0.0f;
+    lowestTemperature = 200.0f;
+    highestTemperature = -100.0f;
+    lowestModuleVolt = 200.0f;
+    highestModuleVolt = 0.0f;
+    exists = true;
 }
 
 BMSModule::~BMSModule() { 
@@ -23,8 +37,37 @@ void BMSModule::readStatus() {
     CUVFaults = buff[6];
 }
 
-bool BMSModule::readModuleValues()
+uint8_t BMSModule::getFaults()
 {
+    return faults;
+}
+
+uint8_t BMSModule::getAlerts()
+{
+    return alerts;
+}
+
+uint8_t BMSModule::getCOVCells()
+{
+    return COVFaults;
+}
+
+uint8_t BMSModule::getCUVCells()
+{
+    return CUVFaults;
+}
+
+bool BMSModule::readModule() {
+
+    while(!readModuleValues()) {
+        Serial.println("CRC error. Retrying");
+    }
+
+    return true;
+}
+
+bool BMSModule::readModuleValues() {
+
     uint8_t payload[4];
     uint8_t buff[50];
     uint8_t calcCRC;
@@ -36,26 +79,24 @@ bool BMSModule::readModuleValues()
     payload[0] = moduleAddress << 1;
     
     readStatus();
-    Serial.printf("Module %i   alerts=%X   faults=%X   COV=%X   CUV=%X\n", moduleAddress, alerts, faults, COVFaults, CUVFaults);
+
+    //Serial.printf("Module %i   alerts=%X   faults=%X   COV=%X   CUV=%X\n", moduleAddress, alerts, faults, COVFaults, CUVFaults);
     
     payload[1] = REG_ADC_CTRL;
-    payload[2] = 0b00111101; //ADC Auto mode, read every ADC input we can (Both Temps, Pack, 6 cells)
+    payload[2] = 0b00111101; // ADC Auto mode, read every ADC input we can (Both Temps, Pack, 6 cells)
     comms.sendDataWithReply(payload, 3, true, buff, 3);
- 
     payload[1] = REG_IO_CTRL;
     payload[2] = 0b00000011; //enable temperature measurement VSS pins
-    comms.sendDataWithReply(payload, 3, true, buff, 3);
-            
+    comms.sendDataWithReply(payload, 3, true, buff, 3);     
     payload[1] = REG_ADC_CONV; //start all ADC conversions
     payload[2] = 1;
     comms.sendDataWithReply(payload, 3, true, buff, 3);
-                
     payload[1] = REG_GPAI; //start reading registers at the module voltage registers
     payload[2] = 0x12; //read 18 bytes (Each value takes 2 - ModuleV, CellV1-6, Temp1, Temp2)
     retLen = comms.sendDataWithReply(payload, 3, false, buff, 22);
             
     calcCRC = comms.crc(buff, retLen-1);
-    // Serial.printf("Sent CRC: %x     Calculated CRC: %x", buff[21], calcCRC);
+    // Serial.printf("\nRec CRC: %x Calculated CRC: %x. Len: %d\n", buff[21], calcCRC, retLen);
     
     
     //18 data bytes, address, command, length, and CRC = 22 bytes returned
@@ -68,11 +109,14 @@ bool BMSModule::readModuleValues()
             moduleVolt = (buff[3] * 256 + buff[4]) * 0.002034609f;
             if (moduleVolt > highestModuleVolt) highestModuleVolt = moduleVolt;
             if (moduleVolt < lowestModuleVolt) lowestModuleVolt = moduleVolt;            
+            packVolt = 0;
             for (int i = 0; i < 6; i++) 
             {
                 cellVolt[i] = (buff[5 + (i * 2)] * 256 + buff[6 + (i * 2)]) * 0.000381493f;
                 if (lowestCellVolt[i] > cellVolt[i] && cellVolt[i] >= IgnoreCell) lowestCellVolt[i] = cellVolt[i];
                 if (highestCellVolt[i] < cellVolt[i]) highestCellVolt[i] = cellVolt[i];
+
+                packVolt += cellVolt[i];
             }
             
             //Now using steinhart/hart equation for temperatures. We'll see if it is better than old code.
@@ -90,28 +134,14 @@ bool BMSModule::readModuleValues()
             if (getLowTemp() < lowestTemperature) lowestTemperature = getLowTemp();
             if (getHighTemp() > highestTemperature) highestTemperature = getHighTemp();
 
-            Serial.print("Got voltage and temperature readings");
+            // Serial.println("Reading OK");
             retVal = true;
-
-            Serial.printf("Temp 0: %f\n", temperatures[0]);
-            Serial.printf("Temp 1: %f\n", temperatures[1]);
-
-            // setCursor(5, 30);
-            for (int i = 0; i < 6; i++) 
-            {
-                char cell[20];
-                sprintf(cell, "Cell %i: %0.2f\n", i+1, cellVolt[i]);
-                Serial.printf(cell);
-                displayText(3, 35 + (i * 10), 1, cell, 0xA);
-                
-            }
         }        
     }
-    else
-    {
-        Serial.printf("Invalid module response received for module %i  len: %i   crc: %i   calc: %i\n", 
-                      moduleAddress, retLen, buff[21], calcCRC);
-    }
+    // else
+    // {
+    //     Serial.printf("\nInvalid %i len: %i crc: %i calc: %i\n", moduleAddress, retLen, buff[21], calcCRC);
+    // }
      
      //turning the temperature wires off here seems to cause weird temperature glitches
    // payload[1] = REG_IO_CTRL;
@@ -143,4 +173,21 @@ float BMSModule::getLowTemp()
 float BMSModule::getHighTemp()
 {
    return (temperatures[0] < temperatures[1]) ? temperatures[1] : temperatures[0];     
+}
+
+float BMSModule::getCellVoltage(int cell)
+{
+    if (cell < 0 || cell > 5) return 0.0f;
+    return cellVolt[cell];
+}
+
+float BMSModule::getTemperature(int temp)
+{
+    if (temp < 0 || temp > 1) return 0.0f;
+    return temperatures[temp];
+}
+
+float BMSModule::getPackVoltage() {
+
+    return packVolt;
 }
