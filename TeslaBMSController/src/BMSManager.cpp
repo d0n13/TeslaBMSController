@@ -2,16 +2,13 @@
 
 BMSManager::BMSManager() {
 
+    Serial.print("Starting serial");
     TeslaBMSSerial.begin(TeslaBMSBaudRate);
-
-    // for (int i = 1; i <= MAX_MODULE_ADDR; i++) {
-    //     modules[i].setExists(false);
-    //     modules[i].setAddress(i);
-    // }
 }
 
 BMSManager::~BMSManager() {
 
+    Serial.print("Ending serial");
     TeslaBMSSerial.end();
 }
 
@@ -21,7 +18,6 @@ void BMSManager::findBoards()
     uint8_t payload[3];
     uint8_t buff[8];
 
-    numFoundModules = 0;
     payload[0] = 0;
     payload[1] = 0; //read registers starting at 0
     payload[2] = 1; //read one byte
@@ -35,12 +31,19 @@ void BMSManager::findBoards()
         if (comms.getReply(buff, 8) > 4)
         {
             if (buff[0] == (x << 1) && buff[1] == 0 && buff[2] == 1 && buff[4] > 0) {
-                // modules[x].setExists(true);
+                
+                modules[0].setExists(true);
+                modules[0].setAddress(x);
 
-                numFoundModules++;
                 Serial.printf("Found module with address: %X\n", x); 
             }
         }
         delay(1);
     // }
 }
+
+float BMSManager::getPackVoltage() {
+
+    return modules[0].getPackVoltage();
+}
+
