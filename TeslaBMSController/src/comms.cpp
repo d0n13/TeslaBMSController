@@ -33,35 +33,44 @@ void Comms::sendData(uint8_t *data, uint8_t dataLen, bool isWrite)
     TeslaBMSSerial.write(addrByte);
     TeslaBMSSerial.write(&data[1], dataLen - 1);  // At least 2 bytes sent every time. There should be, addr and cmd at the least.
     data[0] = addrByte;
-    if (isWrite) TeslaBMSSerial.write(crc(data, dataLen));        
+    if (isWrite)
+        TeslaBMSSerial.write(crc(data, dataLen));        
 
-        // Serial.print(addrByte, HEX);
-        // Serial.print(" ");
-        // for (int x = 1; x < dataLen; x++) {
-        //     Serial.print(data[x], HEX);
-        //     Serial.print(" ");
-        // }
-        if (isWrite) Serial.print(crc(data, dataLen), HEX);
+    // Serial.print("\nWriting\n");
+    // Serial.print(addrByte, HEX);
+    // Serial.print(" ");
     
-    data[0] = orig;
+    // for (int x = 1; x < dataLen; x++) {
+    //     Serial.print(data[x], HEX);
+    //     Serial.print(" ");
+    // }
+    
+    // if (isWrite) 
+    //     Serial.print(crc(data, dataLen), HEX);
+    // Serial.print("\n");
+    data[0] = orig; // Reset address back because we added the write bit
 }
 
 int Comms::getReply(uint8_t *data, int maxLen)
 { 
     int numBytes = 0; 
+    // Serial.print("\nReading\n");
     while (TeslaBMSSerial.available() && numBytes < maxLen)
     {
         data[numBytes] = TeslaBMSSerial.read();
         
-            // Serial.print(data[numBytes], HEX);
-            // Serial.print(" ");
+        // Serial.print(data[numBytes], HEX);
+        // Serial.print(" ");
     
         numBytes++;
     }
+    // Serial.print("\n");
     if (maxLen == numBytes)
     {
-        while (TeslaBMSSerial.available()) TeslaBMSSerial.read();
+        while (TeslaBMSSerial.available()) 
+            TeslaBMSSerial.read();
     }
+    // Serial.printf("\nBytes recieved: %d\n", numBytes);
     return numBytes;
 }
 
@@ -77,6 +86,7 @@ int Comms::sendDataWithReply(uint8_t *data, uint8_t dataLen, bool isWrite, uint8
         sendData(data, dataLen, isWrite);
         delay(2 * ((retLen / 8) + 1));
         returnedLength = getReply(retData, retLen);
+        // Serial.printf("Send %d Got %d", dataLen, returnedLength);
         if (returnedLength == retLen) return returnedLength;
         attempts++;
     }
