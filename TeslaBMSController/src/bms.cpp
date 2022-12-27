@@ -1,4 +1,5 @@
 #include "bms.hpp"
+#include "display.hpp"
 
 BMSModule::BMSModule(uint8_t address) {
 
@@ -95,9 +96,14 @@ bool BMSModule::readModuleValues()
             Serial.printf("Temp 0: %f\n", temperatures[0]);
             Serial.printf("Temp 1: %f\n", temperatures[1]);
 
+            // setCursor(5, 30);
             for (int i = 0; i < 6; i++) 
             {
-                Serial.printf("Cell %i: %0.2f\n", i, cellVolt[i]);
+                char cell[20];
+                sprintf(cell, "Cell %i: %0.2f\n", i+1, cellVolt[i]);
+                Serial.printf(cell);
+                displayText(3, 35 + (i * 10), 1, cell, 0xA);
+                
             }
         }        
     }
